@@ -8,7 +8,7 @@ import qualified Data.Map as M
 type LispM a = StateT Environment IO a
 
 type Bindings = M.Map Value Value
-data Environment = Environment { parent :: Maybe Environment, binding :: Bindings } deriving (Ord, Show, Eq)
+data Environment = Environment { currentNs :: Maybe Value, parent :: Maybe Environment, binding :: Bindings } deriving (Ord, Show, Eq)
 
 instance Show Value where
   show (Vint v)            = show v
@@ -20,18 +20,18 @@ instance Show Value where
   show (Vsym Nothing v)    = show v
   show (Vmap v)            = show v
   show (Vlambda args _ _)  = "lambda (" ++ show args ++ ")"
-  show (Vbuiltin name _)   = "lambda (builtin: " ++ name ++ ")"
+  show (Vbuiltinfn name _) = "lambda (builtin: " ++ name ++ ")"
 
 instance Eq Value where
-  (Vbuiltin va _) == (Vbuiltin vb _)             = va == vb
-  va == vb                                       = va == vb
-  a /= b                                         = not(a == b)
+  (Vbuiltinfn va _) == (Vbuiltinfn vb _) = va == vb
+  va == vb                               = va == vb
+  a /= b                                 = not(a == b)
 
 instance Ord Value where
-  compare (Vbuiltin va _) (Vbuiltin vb _) = compare va vb
-  compare (Vbuiltin va _) _               = LT
-  compare _ (Vbuiltin vb _)               = GT
-  compare va vb                           = compare va vb
+  compare (Vbuiltinfn va _) (Vbuiltinfn vb _) = compare va vb
+  compare (Vbuiltinfn va _) _                 = LT
+  compare _ (Vbuiltinfn vb _)                 = GT
+  compare va vb                               = compare va vb
 
 data Value = Vint Int
            | Vfloat Float
@@ -41,7 +41,7 @@ data Value = Vint Int
            | Vsym (Maybe Value) Value
            | Vmap Bindings
            | Vlambda [Value] Environment [Expression]
-           | Vbuiltin String ([Value] -> LispM Value)
+           | Vbuiltinfn String ([Value] -> LispM Value)
 
 data Expression = Eint Int
                 | Efloat Float
@@ -57,6 +57,7 @@ lispEval (Efloat e) = return (Vfloat e)
 lispEval (Ebool e) = return (Vbool e)
 lispEval (Estr e) = return (Vstr e)
 lispEval (Esym ns str) = lookupSym ns str
+lispEval (Elist exprs) = evalList exprs
 
 lookupSym :: Maybe Value -> Value -> LispM Value
 lookupSym ns symbol@(Vstr symName) = do
@@ -83,13 +84,48 @@ lookupSym ns symbol@(Vstr symName) = do
                                 put env
                                 return result
                               Nothing -> return (Vsym Nothing symbol)
-lookupSym _ symbol = error $ "Value " ++ (show symbol) ++ " given as a symbol (expecting a string)"
+lookupSym _ symbol = error $ "Value " ++ show symbol ++ " given as a symbol (expecting a string)"
+
+evalList :: [Expression] -> LispM Value
+evalList [] = return (Vlist [])
+-- TODO: Implement Macros
+evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do
+                                                              env <- get
+                                                              ns' <- (lispEval . head) args
+                                                              let ns = currentNs env
+                                                              modify $ \env -> env{currentNs = Just ns'}
+                                                              mapM evalList [(tail args)]
+                                                              modify $ \env -> env{currentNs = ns}
+                                                              return ns'
+evalList (fnv:args) = do
+  fn <- lispEval fnv
+  args <- mapM lispEval args
+  case fn of
+    (Vlambda params env exprs) -> do
+      let env' = bindInEnv env params args
+      if length(args) == length(params)
+      then do
+        original <- get
+        put env'
+        results <- mapM lispEval exprs
+        put original
+        return (last results)
+      else error $ "Expected " ++ (show . length) args ++ " but received " ++ (show . length) params ++ " arguments"
+    (Vbuiltinfn _ f) -> f args
+    sym@(Vsym _ _) -> error $ "could not find function " ++ show sym
+    v -> error $ "tried to invoke value " ++ show v ++ " as a function"
+
+bindInEnv :: Environment -> [Value] -> [Value] -> Environment
+bindInEnv env [] [] = env
+bindInEnv env (param:params) (arg:args) = let b' = M.insert param arg (binding env)
+                                          in bindInEnv env{binding = b'} params args
 
 globalEnvironment :: Environment
-globalEnvironment = (Environment Nothing M.empty)
+globalEnvironment = (Environment Nothing Nothing M.empty)
 
 run :: [Expression] -> IO Value
 run expressions = do
   let action = sequence (map lispEval expressions)
   (result, _) <- runStateT action globalEnvironment
   return (last result)
+
