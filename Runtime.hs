@@ -8,30 +8,36 @@ import qualified Data.Map as M
 type LispM a = StateT Environment IO a
 
 type Bindings = M.Map Value Value
-data Environment = Environment { currentNs :: Maybe Value, parent :: Maybe Environment, binding :: Bindings } deriving (Ord, Show, Eq)
+data Environment = Environment { currentNs :: Maybe Value, parent :: Maybe Environment, binding :: Bindings } deriving (Show, Eq)
 
 instance Show Value where
   show (Vint v)            = show v
   show (Vfloat v)          = show v
   show (Vlist v)           = show v
   show (Vbool v)           = show v
-  show (Vstr v)            = show "\"" ++ v ++ "\""
-  show (Vsym (Just va) vb) = show va ++ "/" ++ show vb
-  show (Vsym Nothing v)    = show v
+  show (Vstr v)            = show v
+  show (Vsym (Just va) vb) = show "sym@" ++ show va ++ "/" ++ show vb
+  show (Vsym Nothing v)    = show "sym@" ++ show v
   show (Vmap v)            = show v
-  show (Vlambda args _ _)  = "lambda (" ++ show args ++ ")"
+  show (Vlambda args _ _)  = "lambda " ++ show args
   show (Vbuiltinfn name _) = "lambda (builtin: " ++ name ++ ")"
 
 instance Eq Value where
-  (Vbuiltinfn va _) == (Vbuiltinfn vb _) = va == vb
-  va == vb                               = va == vb
-  a /= b                                 = not(a == b)
+  (Vint va)             == (Vint vb)             = va == vb
+  (Vfloat va)           == (Vfloat vb)           = va == vb
+  (Vlist va)            == (Vlist vb)            = va == vb
+  (Vbool va)            == (Vbool vb)            = va == vb
+  (Vstr va)             == (Vstr vb)             = va == vb
+  (Vsym (Just va1) va2) == (Vsym (Just vb1) vb2) = (va1 == vb1) && (va2 == vb2)
+  (Vsym Nothing va)     == (Vsym Nothing vb)     = va == vb
+  (Vmap va)             == (Vmap vb)             = va == vb
+  (Vlambda va1 va2 va3) == (Vlambda vb1 vb2 vb3) = (va1 == vb1) && (va2 == vb2) && (va3 == vb3)
+  (Vbuiltinfn va _)     == (Vbuiltinfn vb _)     = va == vb
+  _                     == _                     = False
+  a                     /= b                     = not(a == b)
 
 instance Ord Value where
-  compare (Vbuiltinfn va _) (Vbuiltinfn vb _) = compare va vb
-  compare (Vbuiltinfn va _) _                 = LT
-  compare _ (Vbuiltinfn vb _)                 = GT
-  compare va vb                               = compare va vb
+  compare va vb = compare (show va) (show vb)
 
 data Value = Vint Int
            | Vfloat Float
@@ -63,8 +69,8 @@ lookupSym :: Maybe Value -> Value -> LispM Value
 lookupSym ns symbol@(Vstr symName) = do
   env <- get
   case ns of
-    Just ns'@(Vstr nsName) -> case M.lookup ns' (binding env) of
-                                Just (Vmap nsBindings) -> case M.lookup symbol nsBindings of
+    Just ns'@(Vstr nsName) -> case M.lookup (Vsym Nothing ns') (binding env) of
+                                Just (Vmap nsBindings) -> case M.lookup (Vsym Nothing symbol) nsBindings of
                                                             Just result -> return result
                                                             Nothing -> error $ "Symbol " ++ symName ++ " not found in namespace " ++ nsName
                                 Nothing -> case (parent env) of
@@ -75,7 +81,7 @@ lookupSym ns symbol@(Vstr symName) = do
                                                return result
                                              Nothing -> error $ "Referenced namespace " ++ nsName ++ " but it did not exist"
     Just ns' -> error $ "Value " ++ (show ns') ++ " given as namespace for symbol"
-    Nothing -> case M.lookup symbol (binding env) of
+    Nothing -> case M.lookup (Vsym Nothing symbol) (binding env) of
                  Just result -> return result
                  Nothing -> case (parent env) of
                               Just env' -> do
@@ -88,15 +94,15 @@ lookupSym _ symbol = error $ "Value " ++ show symbol ++ " given as a symbol (exp
 
 evalList :: [Expression] -> LispM Value
 evalList [] = return (Vlist [])
--- TODO: Implement Macros
-evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do
-                                                              env <- get
-                                                              ns' <- (lispEval . head) args
-                                                              let ns = currentNs env
-                                                              modify $ \env -> env{currentNs = Just ns'}
-                                                              mapM evalList [(tail args)]
-                                                              modify $ \env -> env{currentNs = ns}
-                                                              return ns'
+-- TODO: Implement macros
+evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do env <- get
+                                                                 let ns = currentNs env
+                                                                     body = tail args
+                                                                 ns' <- (lispEval . head) args
+                                                                 modify $ \env -> env{currentNs = Just ns'}
+                                                                 mapM lispEval body
+                                                                 modify $ \env -> env{currentNs = ns}
+                                                                 return ns'
 evalList (fnv:args) = do
   fn <- lispEval fnv
   args <- mapM lispEval args
@@ -119,13 +125,20 @@ bindInEnv :: Environment -> [Value] -> [Value] -> Environment
 bindInEnv env [] [] = env
 bindInEnv env (param:params) (arg:args) = let b' = M.insert param arg (binding env)
                                           in bindInEnv env{binding = b'} params args
+bindInEnv _ _ _ = error $ "Mismatch of arguments/parameters"
 
 globalEnvironment :: Environment
-globalEnvironment = (Environment Nothing Nothing M.empty)
+globalEnvironment = Environment Nothing Nothing $ M.fromList [((Vsym Nothing (Vstr "print-line")), printLine)]
 
 run :: [Expression] -> IO Value
 run expressions = do
   let action = sequence (map lispEval expressions)
   (result, _) <- runStateT action globalEnvironment
   return (last result)
+
+-- Kernel
+
+printLine :: Value
+printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
+                                                 return (Vsym Nothing (Vstr "null")))
 
