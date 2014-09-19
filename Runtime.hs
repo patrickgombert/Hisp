@@ -92,6 +92,10 @@ lookupSym ns symbol@(Vstr symName) = do
                               Nothing -> return (Vsym Nothing symbol)
 lookupSym _ symbol = error $ "Value " ++ show symbol ++ " given as a symbol (expecting a string)"
 
+bindingFromValue :: Value -> Bindings
+bindingFromValue (Vmap b) = b
+bindingFromValue _ = M.empty
+
 evalList :: [Expression] -> LispM Value
 evalList [] = return (Vlist [])
 -- TODO: Implement macros
@@ -100,9 +104,23 @@ evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do env <- get
                                                                      body = tail args
                                                                  ns' <- (lispEval . head) args
                                                                  modify $ \env -> env{currentNs = Just ns'}
-                                                                 mapM lispEval body
+                                                                 mapM lispEval (ghettoQuote (head body))
                                                                  modify $ \env -> env{currentNs = ns}
                                                                  return ns'
+                      | macro == (Esym Nothing (Vstr "def")) = let name = args !! 0
+                                                                   body = args !! 1
+                                                               in do dname <- (lispEval name)
+                                                                     dbody <- (lispEval body)
+                                                                     env <- get
+                                                                     modify $ (\env -> let cNs = case (currentNs env) of
+                                                                                                   Just ns -> ns
+                                                                                                   Nothing -> error $ "Can not invoke def outside of namespace declaration"
+                                                                                           currentNsBinding = case M.lookup cNs (binding env) of
+                                                                                                                Just b -> bindingFromValue b
+                                                                                                                Nothing -> M.empty
+                                                                                           updatedBinding = M.insert dname dbody currentNsBinding
+                                                                                       in env{binding = M.insert cNs (Vmap updatedBinding) (binding env)})
+                                                                     return dbody
 evalList (fnv:args) = do
   fn <- lispEval fnv
   args <- mapM lispEval args
@@ -121,6 +139,11 @@ evalList (fnv:args) = do
     sym@(Vsym _ _) -> error $ "could not find function " ++ show sym
     v -> error $ "tried to invoke value " ++ show v ++ " as a function"
 
+-- TODO: Real quoting
+ghettoQuote :: Expression -> [Expression]
+ghettoQuote (Elist xs) = xs
+ghettoQuote _ = error $ "Tried to ghetto quote something other than a list"
+
 bindInEnv :: Environment -> [Value] -> [Value] -> Environment
 bindInEnv env [] [] = env
 bindInEnv env (param:params) (arg:args) = let b' = M.insert param arg (binding env)
@@ -136,9 +159,11 @@ run expressions = do
   (result, _) <- runStateT action globalEnvironment
   return (last result)
 
+
 -- Kernel
+
+--run [(Elist [(Esym Nothing (Vstr "ns")),(Esym Nothing (Vstr "example")),(Elist [(Elist [(Esym Nothing (Vstr "def")),(Esym Nothing (Vstr "lol")),(Eint 1)])])]), (Esym (Just (Vstr "example")) (Vstr "lol"))]
 
 printLine :: Value
 printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
                                                  return (Vsym Nothing (Vstr "null")))
-
