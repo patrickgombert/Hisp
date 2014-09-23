@@ -121,6 +121,19 @@ evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do env <- get
                                                                                            updatedBinding = M.insert dname dbody currentNsBinding
                                                                                        in env{binding = M.insert cNs (Vmap updatedBinding) (binding env)})
                                                                      return dbody
+                    | macro == (Esym Nothing (Vstr "if")) = let conditional = args !! 0
+                                                                truthy      = args !! 1
+                                                                falsy       = if length(args) >= 3
+                                                                                then Just (args !! 2)
+                                                                                else Nothing
+                                                            in do cond <- lispEval conditional
+                                                                  if cond == (Vbool True)
+                                                                    then do truthyResult <- lispEval truthy
+                                                                            return truthyResult
+                                                                    else case falsy of
+                                                                           Just falsy' -> do falsyResult <- lispEval falsy'
+                                                                                             return falsyResult
+                                                                           Nothing -> return (Vsym Nothing (Vstr "null"))
 evalList (fnv:args) = do
   fn <- lispEval fnv
   args <- mapM lispEval args
@@ -161,8 +174,6 @@ run expressions = do
 
 
 -- Kernel
-
---run [(Elist [(Esym Nothing (Vstr "ns")),(Esym Nothing (Vstr "example")),(Elist [(Elist [(Esym Nothing (Vstr "def")),(Esym Nothing (Vstr "lol")),(Eint 1)])])]), (Esym (Just (Vstr "example")) (Vstr "lol"))]
 
 printLine :: Value
 printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
