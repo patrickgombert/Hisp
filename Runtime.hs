@@ -163,9 +163,6 @@ bindInEnv env (param:params) (arg:args) = let b' = M.insert param arg (binding e
                                           in bindInEnv env{binding = b'} params args
 bindInEnv _ _ _ = error $ "Mismatch of arguments/parameters"
 
-globalEnvironment :: Environment
-globalEnvironment = Environment Nothing Nothing $ M.fromList [((Vsym Nothing (Vstr "print-line")), printLine)]
-
 run :: [Expression] -> IO Value
 run expressions = do
   let action = sequence (map lispEval expressions)
@@ -173,9 +170,26 @@ run expressions = do
   return (last result)
 
 
--- Kernel
+-- Kernel --
+
+
+globalEnvironment :: Environment
+globalEnvironment = Environment Nothing Nothing $ M.fromList [
+                                                              ((Vsym Nothing (Vstr "print-line")), printLine),
+                                                              ((Vsym Nothing (Vstr "=")), equals)
+                                                             ]
 
 printLine :: Value
 printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
                                                  return (Vsym Nothing (Vstr "null")))
+
+equalsReduce :: Bool -> [Value] -> Value
+equalsReduce state (v:vs) = if state
+                              then if length vs == 0
+                                   then (Vbool state)
+                                   else equalsReduce (and [state, (v == (head vs))]) vs
+                              else (Vbool False)
+
+equals :: Value
+equals = Vbuiltinfn "=" (\vals -> return (equalsReduce True vals))
 
