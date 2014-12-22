@@ -104,7 +104,7 @@ evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do env <- get
                                                                      body = tail args
                                                                  ns' <- (lispEval . head) args
                                                                  modify $ \env -> env{currentNs = Just ns'}
-                                                                 mapM lispEval (ghettoQuote (head body))
+                                                                 mapM lispEval (quote (head body))
                                                                  modify $ \env -> env{currentNs = ns}
                                                                  return ns'
                       | macro == (Esym Nothing (Vstr "def")) = let name = args !! 0
@@ -153,9 +153,9 @@ evalList (fnv:args) = do
     v -> error $ "tried to invoke value " ++ show v ++ " as a function"
 
 -- TODO: Real quoting
-ghettoQuote :: Expression -> [Expression]
-ghettoQuote (Elist xs) = xs
-ghettoQuote _ = error $ "Tried to ghetto quote something other than a list"
+quote :: Expression -> [Expression]
+quote (Elist xs) = xs
+quote _ = error $ "Tried to quote something other than a list"
 
 bindInEnv :: Environment -> [Value] -> [Value] -> Environment
 bindInEnv env [] [] = env
