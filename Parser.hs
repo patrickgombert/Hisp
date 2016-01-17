@@ -5,10 +5,10 @@ import Text.Show.Functions
 import Text.ParserCombinators.Parsec hiding (State)
 
 parseSym :: Parser Expression
-parseSym = do symName <- many1 (letter <|> char '-' <|> char '=' <|> char '!')
+parseSym = do symName <- many1 (letter <|> char '-' <|> char '=' <|> char '!' <|> char '+' <|> char '*' <|> char '/')
               result <- optionMaybe (char '/')
               case result of
-                Just _ -> do symNamePart2 <- many1 (letter <|> char '-' <|> char '=' <|> char '!')
+                Just _ -> do symNamePart2 <- many1 (letter <|> char '-' <|> char '=' <|> char '!' <|> char '+' <|> char '*' <|> char '/')
                              return $ Esym (Just (Vstr symName)) (Vstr symNamePart2)
                 Nothing -> return $ Esym Nothing (Vstr symName)
 
