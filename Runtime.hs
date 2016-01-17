@@ -20,7 +20,7 @@ instance Show Value where
   show (Vsym Nothing v)    = show "sym@" ++ show v
   show (Vmap v)            = show v
   show (Vlambda args _ _)  = "lambda " ++ show args
-  show (Vbuiltinfn name _) = "lambda (builtin: " ++ name ++ ")"
+  show (Vbuiltinfn name _) = "kernel/" ++ name
 
 instance Eq Value where
   (Vint va)             == (Vint vb)             = va == vb
@@ -162,37 +162,4 @@ bindInEnv env [] [] = env
 bindInEnv env (param:params) (arg:args) = let b' = M.insert param arg (binding env)
                                           in bindInEnv env{binding = b'} params args
 bindInEnv _ _ _ = error $ "Mismatch of arguments/parameters"
-
-run :: [Expression] -> IO Value
-run expressions = do
-  let action = sequence (map lispEval expressions)
-  (result, _) <- runStateT action globalEnvironment
-  return (last result)
-
-
--- Kernel --
-
-
-globalEnvironment :: Environment
-globalEnvironment = Environment Nothing Nothing $ M.fromList [
-                                                              ((Vsym Nothing (Vstr "print-line")), printLine),
-                                                              ((Vsym Nothing (Vstr "=")), equals),
-                                                              ((Vsym Nothing (Vstr "!=")), notEquals)
-                                                             ]
-
-printLine :: Value
-printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
-                                                 return (Vsym Nothing (Vstr "null")))
-equalsReduce :: Bool -> [Value] -> Bool
-equalsReduce state (v:vs) = if state
-                              then if length vs == 0
-                                   then state
-                                   else equalsReduce (and [state, (v == (head vs))]) vs
-                              else False
-
-equals :: Value
-equals = Vbuiltinfn "=" (\vals -> return (Vbool (equalsReduce True vals)))
-
-notEquals :: Value
-notEquals = Vbuiltinfn "!=" (\vals -> return (Vbool (not (equalsReduce True vals))))
 
