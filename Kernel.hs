@@ -1,6 +1,7 @@
 module Kernel where
 
 import Runtime
+import Parser
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.State
@@ -9,6 +10,7 @@ import qualified Data.Map as M
 globalEnvironment :: Environment
 globalEnvironment = Environment Nothing Nothing $ M.fromList [
                                                               ((Vsym Nothing (Vstr "print-line")), printLine),
+                                                              ((Vsym Nothing (Vstr "eval")), eval),
                                                               ((Vsym Nothing (Vstr "=")), equals),
                                                               ((Vsym Nothing (Vstr "!=")), notEquals),
                                                               ((Vsym Nothing (Vstr "+")), addition),
@@ -20,6 +22,13 @@ globalEnvironment = Environment Nothing Nothing $ M.fromList [
 printLine :: Value
 printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) vals
                                                  return (Vsym Nothing (Vstr "null")))
+
+eval :: Value
+eval = Vbuiltinfn "eval" (\((Vstr expr):_) -> do env <- get
+                                                 let exprs = parseProgram $ expr
+                                                 action <- mapM lispEval exprs
+                                                 return (last action))
+
 equalsReduce :: Bool -> [Value] -> Bool
 equalsReduce state (v:vs) = if state
                               then if length vs == 0

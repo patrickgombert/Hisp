@@ -11,6 +11,6 @@ run expressions = do
   (result, _) <- runStateT action globalEnvironment
   return (last result)
 
-eval :: String -> IO Value
-eval input = run . parseProgram $ input
+fromStr :: String -> IO Value
+fromStr input = run . parseProgram $ input
 
