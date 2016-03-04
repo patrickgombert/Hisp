@@ -16,7 +16,8 @@ globalEnvironment = Environment Nothing Nothing $ M.fromList [
                                                               ((Vsym Nothing (Vstr "+")), addition),
                                                               ((Vsym Nothing (Vstr "-")), subtraction),
                                                               ((Vsym Nothing (Vstr "*")), multiplication),
-                                                              ((Vsym Nothing (Vstr "/")), division)
+                                                              ((Vsym Nothing (Vstr "/")), division),
+                                                              ((Vsym Nothing (Vstr "load")), loadFile)
                                                              ]
 
 printLine :: Value
@@ -98,3 +99,11 @@ instance Divide Value where
 division :: Value
 division = Vbuiltinfn "/" (\vals -> return $ foldl divide (head vals) (tail vals))
 
+loadFile :: Value
+loadFile = Vbuiltinfn "load" (\vals -> do
+                                         results <- mapM (\(Vstr str) -> do
+                                                                           s <- lift $ readFile str
+                                                                           let exprs = parseProgram s
+                                                                           result <- mapM lispEval exprs
+                                                                           return (last result)) vals
+                                         return $ last results)
