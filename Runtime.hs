@@ -46,7 +46,7 @@ data Value = Vint Int
            | Vstr String
            | Vsym (Maybe Value) Value
            | Vmap Bindings
-           | Vlambda [Value] Environment [Expression]
+           | Vlambda [Value] Environment Expression
            | Vbuiltinfn String ([Value] -> LispM Value)
 
 data Expression = Eint Int
@@ -134,6 +134,14 @@ evalList (macro:args) | macro == (Esym Nothing (Vstr "ns")) = do env <- get
                                                                            Just falsy' -> do falsyResult <- lispEval falsy'
                                                                                              return falsyResult
                                                                            Nothing -> return (Vsym Nothing (Vstr "null"))
+                    | macro == (Esym Nothing (Vstr "lambda")) = let arguments = args !! 0
+                                                                    body      = args !! 1
+                                                                in case arguments of
+                                                                     (Elist argExpressionSyms) -> do
+                                                                       let argValueSyms = map (\(Esym Nothing s) -> (Vsym Nothing s)) argExpressionSyms
+                                                                       env <- get
+                                                                       return (Vlambda argValueSyms env body)
+                                                                     _ -> error $ "Lambda arguments must be in list form"
 evalList (fnv:args) = do
   fn <- lispEval fnv
   args <- mapM lispEval args
@@ -144,9 +152,9 @@ evalList (fnv:args) = do
       then do
         original <- get
         put env'
-        results <- mapM lispEval exprs
+        result <- lispEval exprs
         put original
-        return (last results)
+        return result
       else error $ "Expected " ++ (show . length) args ++ " but received " ++ (show . length) params ++ " arguments"
     (Vbuiltinfn _ f) -> f args
     sym@(Vsym _ _) -> error $ "could not find function " ++ show sym
