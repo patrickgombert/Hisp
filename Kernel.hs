@@ -11,6 +11,9 @@ globalEnvironment :: Environment
 globalEnvironment = Environment Nothing Nothing $ M.fromList [
                                                               ((Vsym Nothing (Vstr "print-line")), printLine),
                                                               ((Vsym Nothing (Vstr "eval")), eval),
+                                                              ((Vsym Nothing (Vstr "list")), list),
+                                                              ((Vsym Nothing (Vstr "car")), car),
+                                                              ((Vsym Nothing (Vstr "cdr")), cdr),
                                                               ((Vsym Nothing (Vstr "=")), equals),
                                                               ((Vsym Nothing (Vstr "!=")), notEquals),
                                                               ((Vsym Nothing (Vstr "+")), addition),
@@ -29,6 +32,19 @@ eval = Vbuiltinfn "eval" (\((Vstr expr):_) -> do env <- get
                                                  let exprs = parseProgram $ expr
                                                  action <- mapM lispEval exprs
                                                  return (last action))
+
+list :: Value
+list = Vbuiltinfn "list" (\vals -> return (Vlist vals))
+
+car :: Value
+car = Vbuiltinfn "car" (\((Vlist list):t) -> if null t
+                                               then return (head list)
+                                               else error $ "Expected 1 but received " ++ show (length t + 1) ++ " arguments")
+
+cdr :: Value
+cdr = Vbuiltinfn "cdr" (\((Vlist list):t) -> if null t
+                                               then return (Vlist (tail list))
+                                               else error $ "Expected 1 but received " ++ show (length t + 1) ++ " arguments")
 
 equalsReduce :: Bool -> [Value] -> Bool
 equalsReduce state (v:vs) = if state
@@ -107,3 +123,4 @@ loadFile = Vbuiltinfn "load" (\vals -> do
                                                                            result <- mapM lispEval exprs
                                                                            return (last result)) vals
                                          return $ last results)
+
