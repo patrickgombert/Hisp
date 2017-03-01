@@ -11,6 +11,7 @@ globalEnvironment :: Environment
 globalEnvironment = Environment Nothing Nothing $ M.fromList [
                                                               ((Vsym Nothing (Vstr "print-line")), printLine),
                                                               ((Vsym Nothing (Vstr "eval")), eval),
+                                                              ((Vsym Nothing (Vstr "apply")), apply),
                                                               ((Vsym Nothing (Vstr "list")), list),
                                                               ((Vsym Nothing (Vstr "car")), car),
                                                               ((Vsym Nothing (Vstr "cdr")), cdr),
@@ -28,10 +29,15 @@ printLine = Vbuiltinfn "print-line" (\vals -> do lift $ mapM_ (putStrLn . show) 
                                                  return (Vsym Nothing (Vstr "null")))
 
 eval :: Value
-eval = Vbuiltinfn "eval" (\((Vstr expr):_) -> do env <- get
-                                                 let exprs = parseProgram $ expr
+eval = Vbuiltinfn "eval" (\((Vstr expr):_) -> do let exprs = parseProgram $ expr
                                                  action <- mapM lispEval exprs
                                                  return (last action))
+
+apply :: Value
+apply = Vbuiltinfn "apply" (\(f:args) -> do case f of
+                                              (Vlambda params env exprs) -> executeLambda params env exprs args
+                                              (Vbuiltinfn _ f) -> f args
+                                              _ -> error $ "tried to apply to unbound function var " ++ show f)
 
 list :: Value
 list = Vbuiltinfn "list" (\vals -> return (Vlist vals))
@@ -123,4 +129,3 @@ loadFile = Vbuiltinfn "load" (\vals -> do
                                                                            result <- mapM lispEval exprs
                                                                            return (last result)) vals
                                          return $ last results)
-

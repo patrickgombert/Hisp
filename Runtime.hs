@@ -146,19 +146,21 @@ evalList (fnv:args) = do
   fn <- lispEval fnv
   args <- mapM lispEval args
   case fn of
-    (Vlambda params env exprs) -> do
-      let env' = bindInEnv env params args
-      if length(args) == length(params)
-      then do
-        original <- get
-        put env'
-        result <- lispEval exprs
-        put original
-        return result
-      else error $ "Expected " ++ (show . length) args ++ " but received " ++ (show . length) params ++ " arguments"
+    (Vlambda params env exprs) -> executeLambda params env exprs args
     (Vbuiltinfn _ f) -> f args
     sym@(Vsym _ _) -> error $ "could not find function " ++ show sym
     v -> error $ "tried to invoke value " ++ show v ++ " as a function"
+
+executeLambda :: [Value] -> Environment -> Expression -> [Value] -> LispM Value
+executeLambda params env exprs args = do let env' = bindInEnv env params args
+                                         if length(args) == length(params)
+                                         then do
+                                           original <- get
+                                           put env'
+                                           result <- lispEval exprs
+                                           put original
+                                           return result
+                                         else error $ "Expected " ++ (show . length) args ++ " but received " ++ (show . length) params ++ " arguments"
 
 -- TODO: Real quoting
 quote :: Expression -> [Expression]
